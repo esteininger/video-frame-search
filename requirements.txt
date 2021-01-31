@@ -1,0 +1,9 @@
+Flask==1.1.2
+pymongo==3.10.1
+boto3==1.12.39
+imageai==2.1.5
+youtube_dl==2020.11.1.1
+dnspython==2.1.0
+opencv-python==4.5.1.48
+tensorflow==1.14.0
+keras==2.2.0
