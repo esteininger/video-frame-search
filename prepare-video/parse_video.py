@@ -1,101 +1,105 @@
-# from imageai.Prediction import ImagePrediction
 from imageai.Detection import ObjectDetection
+from imageai.Classification import ImageClassification
+
 import os
 import cv2
 import pymongo
-from config import atlas_url
 
-client = pymongo.MongoClient(atlas_url)
-
-execution_path = os.getcwd()
-
-# import the model
-# prediction = ImagePrediction()
-# prediction.setModelTypeAsResNet()
-# prediction.setModelPath(os.path.join(execution_path, "resnet50_weights_tf_dim_ordering_tf_kernels.h5"))
-# prediction.loadModel()
-
-detector = ObjectDetection()
-detector.setModelTypeAsRetinaNet()
-detector.setModelPath( os.path.join(execution_path , "resnet50_coco_best_v2.0.1.h5"))
-detector.loadModel()
+# because config is in parent directory
+import sys
+sys.path.insert(0,'..')
+from config import mongo_uri
 
 
-def insert(obj):
-    print(obj)
-    # client['discovery']['video_search'].insert_one(obj)
-
-def file_path(id):
-    return f'/Users/ethan.steininger/Desktop/Dev/customers/Discovery/video-frame-search/app/static/img/frames/${id}.jpg'
+abs_filepath = '/Users/ethan.steininger/Desktop/Dev/customers/Discovery/video-frame-search/static/img/frames/'
+video_path = 'mythbusters.mp4'
 
 
-def grab_tags(frame, timestamp, frame_id):
-    # predictions, probabilities = prediction.predictImage(os.path.join(execution_path, frame), result_count=5)
-    tags = []
-    # tag_str = ''
-    # for pred, prob in zip(predictions, probabilities):
-    #     clean_tag_prediction = pred.replace("_", " ")
-    #     # tags.append(clean_tag_prediction)
-    #     # tag_str += f"{clean_tag_prediction} "
-    #     t = {
-    #         "tag": clean_tag_prediction,
-    #         "probability": prob
-    #     }
-    #     tags.append(t)
-    #
-    # return {"timestamp": timestamp, "tags": tags, "video": "Mythbusters: Defying Gravity, Levitating a Car "}
-    detections = detector.detectObjectsFromImage(
-        input_image=frame,
-        output_image_path=file_path(frame_id),
-        minimum_percentage_probability=30
-    )
+class Mongo:
+    def __init__(self, mongo_url):
+        self.client = pymongo.MongoClient(mongo_uri)
+        self.collection = self.client[db][collection]
 
-    for eachObject in detections:
-        t = {
-            "tag": eachObject["name"],
-            "probability": eachObject["percentage_probability"],
-            "location": eachObject["box_points"]
-        }
-        tags.append(t)
+    def insert(self, doc):
+        self.collection.insert_one(doc)
 
-    return {"timestamp": timestamp, "tags": tags, "video": "Mythbusters: Defying Gravity, Levitating a Car "}
+class AI:
+    def __init__(self):
+        self.execution_path = os.getcwd()
+
+    def init_object_detection(self):
+        #import the model
+        self.detector = ObjectDetection()
+        self.detector.setModelTypeAsRetinaNet()
+        self.detector.setModelPath(os.path.join(self.execution_path , "resnet50_coco_best_v2.1.0.h5"))
+        self.detector.loadModel()
+
+    def grab_object_tags(self, frame, timestamp):
+        detections = self.detector.detectObjectsFromImage(
+            input_image=frame,
+            output_image_path=frame,
+            minimum_percentage_probability=30
+        )
+
+        tags = []
+        for eachObject in detections:
+            t = {
+                "tag": eachObject["name"],
+                "probability": eachObject["percentage_probability"],
+                "location": eachObject["box_points"]
+            }
+            tags.append(t)
+
+        return {"timestamp": timestamp, "tags": tags}
 
 
+    def init_image_classification(self):
+        # import the model
+        self.prediction = ImageClassification()
+        self.prediction.setModelTypeAsResNet50()
+        self.prediction.setModelPath(os.path.join(self.execution_path, "resnet50_imagenet_tf.2.0.h5"))
+        self.prediction.loadModel()
+
+    def grab_image_tags(self, frame, timestamp):
+        predictions, probabilities = self.prediction.classifyImage(frame, result_count=10)
+        for eachPrediction, eachProbability in zip(predictions, probabilities):
+            print(eachPrediction , " : " , eachProbability)
 
 
-def video_to_frames():
-    vidcap = cv2.VideoCapture('mythbusters.mp4')
+def main():
+    mongo = Mongo()
+    ai = AI()
+    ai.init_object_detection()
+    vidcap = cv2.VideoCapture(video_path)
     fps = vidcap.get(cv2.CAP_PROP_FPS)
-    seconds = 0.5
+    # capture every N seconds of frames
     success, image = vidcap.read()
+    #
+    seconds = 0.5
     multiplier = fps * seconds
     count = 0
-
     while success:
-        #current frame number, rounded b/c sometimes you get frame intervals which aren't integers...this adds a little imprecision but is likely good enough
+        # current frame number, rounded b/c sometimes you get
+        # frame intervals which aren't integers...this adds a
+        # little imprecision but is likely good enough
         frame_id = int(round(vidcap.get(1)))
         success, image = vidcap.read()
         # skip based on multiplier
         # every 10th frame:
         if frame_id % multiplier == 0:
-            filepath = file_path(frame_id)
             timestamp = count/fps
+            filepath = abs_filepath + f"{frame_id}.jpg"
             cv2.imwrite(filepath, image)
             # grab tags
-            tag_obj = grab_tags(filepath, timestamp, frame_id)
-            # os.remove(filepath)
-            # insert
-            print(tag_obj)
-            # tag_obj['img'] = frame_id
-            # # make sure there are actually tags !
-            # if tag_obj['tags']:
-            #     insert(tag_obj)
-            # else:
-            #     os.remove(filepath)
-            # next !
-        print('Read a new frame: ', success)
+            tag_obj = ai.grab_object_tags(filepath, timestamp)
+            # only save frames that have tags
+            if tag_obj['tags']:
+                # insert
+                mongo.insert(tag_obj)
+            else:
+                os.remove(filepath)
         count += 1
 
 
 if __name__ == '__main__':
-    video_to_frames()
+    main()
