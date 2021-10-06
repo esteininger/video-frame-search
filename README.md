@@ -1,8 +1,9 @@
-# mongodb-full-text-search-app
+# mongodb-video-frame-search
 
-![alt text](assets/demo-video.gif)
+<img src="assets/demo.gif" alt="video" width="50%"/>
 
-Demonstration of ___
+
+Demonstration
 
 ## Installation
 
